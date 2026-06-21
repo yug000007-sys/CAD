@@ -34,9 +34,9 @@ with st.sidebar:
     st.divider()
     st.header("Settings")
     api_key = st.text_input(
-        "Anthropic API Key (for translation)",
+        "Groq API Key (for translation)",
         type="password",
-        help="Required only for files with non-Latin text (Korean, Arabic, Chinese, etc.)"
+        help="Required only for files with non-Latin text (Korean, Arabic, Chinese, etc.). Get a free key at console.groq.com"
     )
 
 # ── File upload ───────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ if uploaded:
                     st.write(f"**{field}** (row {idx}): `{val}`")
 
         if not api_key:
-            st.error("Please enter your Anthropic API key in the sidebar to translate these fields.")
+            st.error("Please enter your Groq API key in the sidebar to translate these fields. Get a free key at console.groq.com")
             st.stop()
 
         with st.spinner("Translating non-Latin fields via Claude..."):
@@ -85,30 +85,35 @@ if uploaded:
 
             try:
                 resp = requests.post(
-                    "https://api.anthropic.com/v1/messages",
+                    "https://api.groq.com/openai/v1/chat/completions",
                     headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
                     },
                     json={
-                        "model": "claude-sonnet-4-6",
+                        "model": "llama-3.3-70b-versatile",
                         "max_tokens": 1000,
-                        "messages": [{
-                            "role": "user",
-                            "content": (
-                                "Translate any non-English or non-Latin script text to English. "
-                                "If already in English/Latin, return as-is.\n"
-                                "Return ONLY a JSON array of translated strings in the same order, "
-                                "no explanation, no markdown.\n\n"
-                                f"Input: {json.dumps(all_values)}"
-                            )
-                        }]
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a translation assistant. "
+                                    "Translate any non-English or non-Latin script text to English. "
+                                    "If already in English/Latin, return as-is. "
+                                    "Return ONLY a JSON array of translated strings in the same order, "
+                                    "no explanation, no markdown backticks."
+                                )
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Input: {json.dumps(all_values)}"
+                            }
+                        ]
                     },
                     timeout=30,
                 )
                 result = resp.json()
-                text = "".join(b.get("text", "") for b in result.get("content", []))
+                text = result["choices"][0]["message"]["content"]
                 clean = text.replace("```json", "").replace("```", "").strip()
                 trans_list = json.loads(clean)
 
