@@ -8,11 +8,9 @@ import streamlit as st
 import requests
 import pandas as pd
 
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
-
-from projects.configs import PROJECTS
-from utils.processor import (
+# Flat imports — works on Streamlit Cloud
+from configs import PROJECTS
+from processor import (
     process, detect_non_latin_fields, to_csv_bytes, TEMPLATE_COLS, is_non_latin
 )
 
@@ -35,21 +33,24 @@ with st.sidebar:
 
     st.divider()
     st.header("Settings")
-    api_key = st.text_input("Anthropic API Key (for translation)", type="password",
-                            help="Required only for files with non-Latin text (Korean, Arabic, Chinese, etc.)")
+    api_key = st.text_input(
+        "Anthropic API Key (for translation)",
+        type="password",
+        help="Required only for files with non-Latin text (Korean, Arabic, Chinese, etc.)"
+    )
 
 # ── File upload ───────────────────────────────────────────────────────────────
 fmt = config["input_format"]
 accept_map = {
-    "xlsx":          [".xlsx", ".xls"],
-    "msg_xlsx":      [".msg"],
-    "msg_body_csv":  [".msg"],
+    "xlsx":         ["xlsx", "xls"],
+    "msg_xlsx":     ["msg"],
+    "msg_body_csv": ["msg"],
 }
-accepted = accept_map.get(fmt, [".xlsx", ".msg"])
+accepted = accept_map.get(fmt, ["xlsx", "msg"])
 
 uploaded = st.file_uploader(
     f"Upload raw file for **{project_name}**",
-    type=[e.lstrip(".") for e in accepted],
+    type=accepted,
     help=f"Expected format: {fmt}"
 )
 
@@ -107,8 +108,8 @@ if uploaded:
                     timeout=30,
                 )
                 result = resp.json()
-                text = "".join(b.get("text","") for b in result.get("content", []))
-                clean = text.replace("```json","").replace("```","").strip()
+                text = "".join(b.get("text", "") for b in result.get("content", []))
+                clean = text.replace("```json", "").replace("```", "").strip()
                 trans_list = json.loads(clean)
 
                 for (field, idx), trans_val in zip(index_map, trans_list):
@@ -134,17 +135,17 @@ if uploaded:
     # ── Stats ─────────────────────────────────────────────────────────────────
     col1, col2, col3 = st.columns(3)
     col1.metric("Unique contacts", len(result_df))
-    col2.metric("LeadSource1", config.get("lead_source_1","—"))
-    col3.metric("LeadSource2", config.get("lead_source_2","—"))
+    col2.metric("LeadSource1", config.get("lead_source_1", "—"))
+    col3.metric("LeadSource2", config.get("lead_source_2", "—"))
 
     # ── Preview ───────────────────────────────────────────────────────────────
     with st.expander("Preview output (first 5 rows)"):
-        preview_cols = ["Email","FirstName","LastName","Company","City","Country","LeadSource1","LeadSource2"]
+        preview_cols = ["Email", "FirstName", "LastName", "Company", "City", "Country", "LeadSource1", "LeadSource2"]
         st.dataframe(result_df[[c for c in preview_cols if c in result_df.columns]].head())
 
     # ── Download ──────────────────────────────────────────────────────────────
     fname_base = uploaded.name.rsplit(".", 1)[0]
-    out_name = f"{project_name.replace(' ','_')}_{fname_base}_leads.csv"
+    out_name = f"{project_name.replace(' ', '_')}_{fname_base}_leads.csv"
     csv_bytes = to_csv_bytes(result_df)
 
     st.download_button(
@@ -157,4 +158,4 @@ if uploaded:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.divider()
-st.caption("To add a new project, add a config block to `projects/configs.py` — no other code changes needed.")
+st.caption("To add a new project, add a config block to `configs.py` — no other code changes needed.")
