@@ -122,6 +122,18 @@ if is_universal:
 
     st.caption(f"Detected {len(detected_cols)} columns from your file.")
 
+    # Show auto-detected contact field mapping
+    from processor import auto_map_contact_fields
+    auto_map = auto_map_contact_fields(detected_cols)
+    with st.expander("📌 Auto-detected contact field mapping", expanded=False):
+        st.caption("These standard fields were matched automatically from your file columns. Override by editing below if needed.")
+        for field, raw_col in auto_map.items():
+            if raw_col:
+                display_col = ", ".join(raw_col) if isinstance(raw_col, list) else raw_col
+                st.write(f"**{field}** ← `{display_col}`")
+            else:
+                st.write(f"**{field}** ← ⚠️ not found")
+
     # Email column picker
     email_options = [c for c in detected_cols if "email" in c.lower()] + \
                     [c for c in detected_cols if "email" not in c.lower()]

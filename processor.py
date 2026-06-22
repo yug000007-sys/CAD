@@ -94,7 +94,41 @@ def read_msg_body_csv(file_bytes: bytes) -> pd.DataFrame:
         df = df[df["Email"].str.contains(r"@", na=False)].reset_index(drop=True)
     return df
 
-def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
+def auto_map_contact_fields(columns: list) -> dict:
+    """
+    For Universal mode: fuzzy-match raw column names to standard contact fields.
+    Returns a col_map dict like the ones in configs.py.
+    """
+    cols_lower = {c.lower().strip(): c for c in columns}
+
+    def find(candidates):
+        for c in candidates:
+            if c in cols_lower:
+                return cols_lower[c]
+        return ""
+
+    # Address: collect all address-like columns as a list
+    addr_cols = []
+    for c in columns:
+        cl = c.lower().strip()
+        if re.match(r"address\s*[123]?$", cl) or cl in ("street", "address1", "address2", "addr1", "addr2", "street address"):
+            addr_cols.append(c)
+
+    return {
+        "FirstName":     find(["firstname", "first name", "first_name", "fname", "name", "customer name", "contact first name"]),
+        "LastName":      find(["lastname", "last name", "last_name", "lname", "surname", "contact last name"]),
+        "ContactTitle":  find(["jobtitle", "job title", "job_title", "title", "contacttitle", "contact title", "position", "role"]),
+        "Company":       find(["company", "companyname", "company name", "company_name", "organization", "firm", "account", "business"]),
+        "Address":       addr_cols if addr_cols else find(["address", "street", "addr"]),
+        "City":          find(["city", "town", "municipality"]),
+        "State":         find(["state", "state/province", "province", "region", "state (usa)"]),
+        "ZipCode":       find(["zip", "zipcode", "zip code", "zip_code", "postal code", "postalcode", "postal_code", "postcode"]),
+        "Country":       find(["country", "country name", "countryname", "nation"]),
+        "PhoneSupplied": find(["phone", "phonenumber", "phone number", "phone_number", "telephone", "tel", "mobile", "cell"]),
+    }
+
+
+
     """Auto-detect format from filename extension."""
     ext = filename.lower().rsplit(".", 1)[-1]
     if ext in ("xlsx", "xls"):
@@ -112,6 +146,25 @@ def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
         return read_msg_body_csv(file_bytes)
     else:
         raise ValueError(f"Unsupported file type: .{ext}")
+
+def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
+    """Auto-detect format from filename extension."""
+    ext = filename.lower().rsplit(".", 1)[-1]
+    if ext in ("xlsx", "xls"):
+        return read_xlsx(file_bytes)
+    elif ext == "csv":
+        return read_csv(file_bytes)
+    elif ext == "msg":
+        pk = file_bytes.find(b"PK\x03\x04")
+        if pk != -1:
+            try:
+                return read_msg_xlsx(file_bytes)
+            except Exception:
+                pass
+        return read_msg_body_csv(file_bytes)
+    else:
+        raise ValueError(f"Unsupported file type: .{ext}")
+
 
 def get_columns(file_bytes: bytes, filename: str) -> list:
     """Return list of column names from a file — used by Universal project."""
@@ -259,6 +312,11 @@ def process(file_bytes: bytes, config: dict, translated: dict = None, filename: 
 
     col_map   = config.get("col_map", {})
     email_col = config.get("merge_by", "Email")
+
+    # Universal mode: auto-map contact fields from detected columns
+    if src == "universal" and not col_map:
+        col_map = auto_map_contact_fields(list(df.columns))
+
     rows_out  = []
     email_list = list(df.groupby(email_col, sort=False).groups.keys())
 
@@ -330,6 +388,7 @@ def detect_non_latin_fields(file_bytes: bytes, config: dict, filename: str = "")
 
 
 def to_csv_bytes(df: pd.DataFrame) -> bytes:
-    buf = io.StringIO()
-    df.to_csv(buf, index=False)
-    return buf.getvalue().encode("utf-8")
+    """Save CSV with UTF-8 BOM so Excel opens it correctly without encoding corruption."""
+    buf = io.BytesIO()
+    df.to_csv(buf, index=False, encoding='utf-8-sig')
+    return buf.getvalue()
