@@ -1,6 +1,7 @@
 """
 Core lead processing engine.
-Handles: xlsx, msg_xlsx, msg_body_csv input formats.
+Handles: xlsx, csv, msg_xlsx, msg_body_csv input formats.
+Auto-detects format from file extension when source_type is 'universal'.
 Merges by email, builds per-project LeadComments HTML, translates non-Latin text.
 """
 
@@ -53,7 +54,6 @@ def read_csv(file_bytes: bytes) -> pd.DataFrame:
             continue
     raise ValueError("Could not read CSV file.")
 
-
 def read_xlsx(file_bytes: bytes) -> pd.DataFrame:
     return pd.read_excel(io.BytesIO(file_bytes))
 
@@ -94,23 +94,40 @@ def read_msg_body_csv(file_bytes: bytes) -> pd.DataFrame:
         df = df[df["Email"].str.contains(r"@", na=False)].reset_index(drop=True)
     return df
 
+def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
+    """Auto-detect format from filename extension."""
+    ext = filename.lower().rsplit(".", 1)[-1]
+    if ext in ("xlsx", "xls"):
+        return read_xlsx(file_bytes)
+    elif ext == "csv":
+        return read_csv(file_bytes)
+    elif ext == "msg":
+        # Try embedded xlsx first, fall back to CSV in body
+        pk = file_bytes.find(b"PK\x03\x04")
+        if pk != -1:
+            try:
+                return read_msg_xlsx(file_bytes)
+            except Exception:
+                pass
+        return read_msg_body_csv(file_bytes)
+    else:
+        raise ValueError(f"Unsupported file type: .{ext}")
+
+def get_columns(file_bytes: bytes, filename: str) -> list:
+    """Return list of column names from a file — used by Universal project."""
+    df = auto_read(file_bytes, filename)
+    return list(df.columns)
+
 # ── LeadComments builders ─────────────────────────────────────────────────────
 
 def build_lead_comments_nexen(group_rows, config: dict) -> str:
     """Nexen format: grouped unique products + content types on single lines."""
-    intro = config.get("lead_intro", "This lead is generated from CAD Download:")
-    outro = config.get("lead_outro", "")
-
-    # Collect selected comment fields from config
+    intro  = config.get("lead_intro", "This lead is generated from CAD Download:")
+    outro  = config.get("lead_outro", "")
     fields = config.get("comment_fields", [])
     field_map = {label: col for label, col in fields}
+    selected_labels = [label for label, _ in fields]
 
-    # Get selected field labels (respects field picker)
-    product_col      = field_map.get("Part Number",   "Product")
-    content_type_col = field_map.get("Content Type",  "Content Type")
-    date_col         = field_map.get("Date",           "Accessed At")
-
-    # Deduplicated values preserving order
     def unique_vals(col):
         seen, out = set(), []
         for row in group_rows:
@@ -121,35 +138,26 @@ def build_lead_comments_nexen(group_rows, config: dict) -> str:
         return out
 
     html = f"{intro}<br>"
-
-    # Only include lines for fields that are selected
-    selected_labels = [label for label, _ in fields]
-
     if "Part Number" in selected_labels:
-        products = unique_vals(product_col)
-        if products:
-            html += f"<br><b>Part Number: </b>{', '.join(products)}"
-
+        vals = unique_vals(field_map.get("Part Number", "Product"))
+        if vals:
+            html += f"<br><b>Part Number: </b>{', '.join(vals)}"
     if "Content Type" in selected_labels:
-        ctypes = unique_vals(content_type_col)
-        if ctypes:
-            html += f"<br><b>Content Type: </b>{', '.join(ctypes)}"
-
+        vals = unique_vals(field_map.get("Content Type", "Content Type"))
+        if vals:
+            html += f"<br><b>Content Type: </b>{', '.join(vals)}"
     if "Date" in selected_labels:
-        dates = unique_vals(date_col)
-        if dates:
-            html += f"<br><b>Date: </b>{', '.join(dates)}"
-
+        vals = unique_vals(field_map.get("Date", "Accessed At"))
+        if vals:
+            html += f"<br><b>Date: </b>{', '.join(vals)}"
     if outro:
         html += f"<br><br>{outro}"
-
     return html.strip()
 
-
 def build_lead_comments_default(group_rows, config: dict) -> str:
-    """Standard HTML comment block used by most projects."""
-    intro = config.get("lead_intro", "")
-    outro = config.get("lead_outro", "")
+    """Standard HTML comment block — one block per download row."""
+    intro  = config.get("lead_intro", "")
+    outro  = config.get("lead_outro", "")
     fields = config.get("comment_fields", [])
     html = f"{intro}<br><br>" if intro else ""
     for row in group_rows:
@@ -166,7 +174,7 @@ def build_lead_comments_nason(group_rows, config: dict) -> str:
     """Nason format: MODEL NUMBER:{model} and cad name: {cad}"""
     intro = config.get("lead_intro", "This is a registered user who has downloaded the cad drawing for")
     outro = config.get("lead_outro", "please contact the customer for service and product opportunities.")
-    html = f"{intro} <br><br>"
+    html  = f"{intro} <br><br>"
     for row in group_rows:
         model = get_val(row, "CAD name") or get_val(row, "Part number") or ""
         cad   = get_val(row, "Standardname") or get_val(row, "CAD format") or ""
@@ -176,9 +184,9 @@ def build_lead_comments_nason(group_rows, config: dict) -> str:
     return html.strip()
 
 def build_lead_comments_leak_defense(group_rows, config: dict) -> str:
-    """Leak Defense: Notes to Rep field IS the comment body, plus lead source info."""
+    """Leak Defense: Notes to Rep IS the body; other fields as labels."""
     fields = config.get("comment_fields", [])
-    parts = []
+    parts  = []
     for row in group_rows:
         for label, col in fields:
             val = get_val(row, col)
@@ -210,7 +218,6 @@ def merge_passthrough(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         row = {}
         for col in TEMPLATE_COLS:
             row[col] = str(first.get(col, "") or "") if col in df.columns else ""
-        # Merge LeadComments
         comments = group["LeadComments"].dropna().astype(str).tolist() if "LeadComments" in group else []
         row["LeadComments"] = "\n\n---\n\n".join(c for c in comments if c.strip())
         rows.append(row)
@@ -221,34 +228,43 @@ def merge_passthrough(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 def clean_nexen_name(val: str) -> str:
     return re.sub(r"\s*\(\d+\)\s*$", "", str(val or "")).strip()
 
-# ── Main processor ────────────────────────────────────────────────────────────
+# ── Smart format resolver ─────────────────────────────────────────────────────
 
-def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.DataFrame:
-    fmt = config["input_format"]
+def resolve_df(file_bytes: bytes, config: dict, filename: str = "") -> pd.DataFrame:
+    """Read file using config format, with auto fallback for universal projects."""
+    fmt = config.get("input_format", "auto")
     src = config.get("source_type", "")
 
-    if fmt == "xlsx":
-        df = read_xlsx(file_bytes)
+    if fmt == "auto" or src == "universal":
+        return auto_read(file_bytes, filename)
+    elif fmt == "xlsx":
+        return read_xlsx(file_bytes)
     elif fmt == "csv":
-        df = read_csv(file_bytes)
+        return read_csv(file_bytes)
     elif fmt == "msg_xlsx":
-        df = read_msg_xlsx(file_bytes)
+        return read_msg_xlsx(file_bytes)
     elif fmt == "msg_body_csv":
-        df = read_msg_body_csv(file_bytes)
+        return read_msg_body_csv(file_bytes)
     else:
         raise ValueError(f"Unknown input_format: {fmt}")
+
+# ── Main processor ────────────────────────────────────────────────────────────
+
+def process(file_bytes: bytes, config: dict, translated: dict = None, filename: str = "") -> pd.DataFrame:
+    src = config.get("source_type", "")
+    df  = resolve_df(file_bytes, config, filename)
 
     if src == "passthrough":
         return merge_passthrough(df, config)
 
-    col_map = config["col_map"]
-    email_col = config["merge_by"]
-    rows_out = []
+    col_map   = config.get("col_map", {})
+    email_col = config.get("merge_by", "Email")
+    rows_out  = []
     email_list = list(df.groupby(email_col, sort=False).groups.keys())
 
     for pos, email in enumerate(email_list):
-        group = df[df[email_col] == email]
-        first = group.iloc[0]
+        group      = df[df[email_col] == email]
+        first      = group.iloc[0]
         group_rows = group.to_dict("records")
 
         def t(field):
@@ -270,6 +286,7 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
         row["PhoneSupplied"] = get_val(first, col_map.get("PhoneSupplied", ""))
         row["LeadSource1"]   = config.get("lead_source_1", "")
         row["LeadSource2"]   = config.get("lead_source_2", "")
+        row["LeadSource3"]   = config.get("lead_source_3", "")
 
         addr_cols = col_map.get("Address", [])
         if isinstance(addr_cols, list):
@@ -284,26 +301,16 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
     return pd.DataFrame(rows_out, columns=TEMPLATE_COLS)
 
 
-def detect_non_latin_fields(file_bytes: bytes, config: dict) -> dict:
+def detect_non_latin_fields(file_bytes: bytes, config: dict, filename: str = "") -> dict:
     if config.get("source_type") == "passthrough":
         return {}
-    fmt = config["input_format"]
     try:
-        if fmt == "xlsx":
-            df = read_xlsx(file_bytes)
-        elif fmt == "csv":
-            df = read_csv(file_bytes)
-        elif fmt == "msg_xlsx":
-            df = read_msg_xlsx(file_bytes)
-        elif fmt == "msg_body_csv":
-            df = read_msg_body_csv(file_bytes)
-        else:
-            return {}
+        df = resolve_df(file_bytes, config, filename)
     except Exception:
         return {}
 
-    col_map = config["col_map"]
-    email_col = config["merge_by"]
+    col_map   = config.get("col_map", {})
+    email_col = config.get("merge_by", "Email")
     translate_fields = ["FirstName", "LastName", "Company", "City", "Country", "Address"]
     to_translate = {}
     emails = list(df.groupby(email_col, sort=False).groups.keys())

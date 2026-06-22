@@ -295,4 +295,19 @@ PROJECTS = {
         "col_map": {},
         "comment_fields": [],
     },
+
+    # ─── UNIVERSAL / BATCH ────────────────────────────────────────────────────
+    "Universal / Batch": {
+        "description": "Generic batch processor — upload any file, auto-detect columns, configure everything manually",
+        "input_format": "auto",
+        "source_type":  "universal",
+        "merge_by":     "Email",
+        "lead_intro":   "",
+        "lead_outro":   "",
+        "lead_source_1": "",
+        "lead_source_2": "",
+        "lead_source_3": "",
+        "col_map":      {},
+        "comment_fields": [],
+    },
 }
