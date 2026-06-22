@@ -135,7 +135,7 @@ lead_source_2 = ls_col2.text_input(
 # ── LeadComments field picker ─────────────────────────────────────────────────
 all_comment_fields = config.get("comment_fields", [])
 comment_template   = config.get("comment_template", "default")
-show_picker = len(all_comment_fields) > 0 and comment_template == "default"
+show_picker = len(all_comment_fields) > 0 and comment_template not in ("nason", "leak_defense")
 
 selected_fields = all_comment_fields
 
