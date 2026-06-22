@@ -313,7 +313,7 @@ def process(file_bytes: bytes, config: dict, translated: dict = None, filename: 
     col_map   = config.get("col_map", {})
     email_col = config.get("merge_by", "Email")
 
-    # Universal mode: auto-map contact fields from detected columns
+    # Universal mode: auto-map contact fields only if no manual map was provided
     if src == "universal" and not col_map:
         col_map = auto_map_contact_fields(list(df.columns))
 

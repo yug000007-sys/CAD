@@ -122,17 +122,48 @@ if is_universal:
 
     st.caption(f"Detected {len(detected_cols)} columns from your file.")
 
-    # Show auto-detected contact field mapping
+    # Contact field manual mapper
     from processor import auto_map_contact_fields
     auto_map = auto_map_contact_fields(detected_cols)
-    with st.expander("📌 Auto-detected contact field mapping", expanded=False):
-        st.caption("These standard fields were matched automatically from your file columns. Override by editing below if needed.")
-        for field, raw_col in auto_map.items():
-            if raw_col:
-                display_col = ", ".join(raw_col) if isinstance(raw_col, list) else raw_col
-                st.write(f"**{field}** ← `{display_col}`")
+
+    st.markdown("**📌 Contact field mapping**")
+    st.caption("Auto-matched from your columns — override any field using the dropdowns.")
+
+    CONTACT_FIELDS = [
+        ("FirstName",    "First Name"),
+        ("LastName",     "Last Name"),
+        ("ContactTitle", "Job Title"),
+        ("Company",      "Company"),
+        ("Address",      "Address"),
+        ("City",         "City"),
+        ("State",        "State"),
+        ("ZipCode",      "Zip / Postal Code"),
+        ("Country",      "Country"),
+        ("PhoneSupplied","Phone"),
+    ]
+
+    none_option = "— skip —"
+    col_options = [none_option] + detected_cols
+    manual_col_map = {}
+
+    grid1, grid2 = st.columns(2)
+    for i, (field_key, field_label) in enumerate(CONTACT_FIELDS):
+        auto_val = auto_map.get(field_key, "")
+        if isinstance(auto_val, list):
+            auto_val = auto_val[0] if auto_val else ""
+        default_idx = col_options.index(auto_val) if auto_val in col_options else 0
+        container = grid1 if i % 2 == 0 else grid2
+        chosen = container.selectbox(
+            field_label,
+            options=col_options,
+            index=default_idx,
+            key=f"cmap_{field_key}",
+        )
+        if chosen != none_option:
+            if field_key == "Address":
+                manual_col_map[field_key] = [chosen]
             else:
-                st.write(f"**{field}** ← ⚠️ not found")
+                manual_col_map[field_key] = chosen
 
     # Email column picker
     email_options = [c for c in detected_cols if "email" in c.lower()] + \
@@ -170,7 +201,7 @@ if is_universal:
     active_config = {
         **config,
         "merge_by":       email_col_pick,
-        "col_map":        {},
+        "col_map":        manual_col_map,
         "comment_fields": selected_fields,
         "comment_template": "default",
         "lead_intro":     lead_intro,
