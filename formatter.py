@@ -231,8 +231,9 @@ def format_state(state: str, country: str) -> str:
         return s.upper() if len(s) <= 3 else s
 
     else:
-        # International — return as-is for now; Groq expansion done in batch
-        return s
+        # International — try static lookup first
+        expanded = lookup_intl_state(s, country)
+        return expanded
 
 # ── Zip lookup — USA (local file) ────────────────────────────────────────────
 
@@ -338,7 +339,98 @@ def lookup_intl_zip_groq(zip_country_pairs: list, api_key: str) -> list:
         pass
     return [{"city": "", "state": ""} for _ in zip_country_pairs]
 
-# ── Main batch formatter ──────────────────────────────────────────────────────
+# ── International state lookup tables (no API needed) ────────────────────────
+
+MEXICO_STATES = {
+    "AGU": "Aguascalientes", "BCN": "Baja California", "BCS": "Baja California Sur",
+    "CAM": "Campeche", "CHP": "Chiapas", "CHH": "Chihuahua",
+    "CMX": "Ciudad de México", "CDMX": "Ciudad de México", "DF": "Ciudad de México",
+    "COA": "Coahuila", "COL": "Colima", "DUR": "Durango",
+    "GUA": "Guanajuato", "GRO": "Guerrero", "HID": "Hidalgo",
+    "JAL": "Jalisco", "MEX": "Estado de México", "MIC": "Michoacán",
+    "MOR": "Morelos", "NAY": "Nayarit", "NLE": "Nuevo León",
+    "OAX": "Oaxaca", "PUE": "Puebla", "QUE": "Querétaro",
+    "ROO": "Quintana Roo", "SLP": "San Luis Potosí", "SIN": "Sinaloa",
+    "SON": "Sonora", "TAB": "Tabasco", "TAM": "Tamaulipas",
+    "TLA": "Tlaxcala", "VER": "Veracruz", "YUC": "Yucatán",
+    "ZAC": "Zacatecas",
+}
+
+FRANCE_REGIONS = {
+    "IDF": "Île-de-France", "ARA": "Auvergne-Rhône-Alpes", "BFC": "Bourgogne-Franche-Comté",
+    "BRE": "Bretagne", "CVL": "Centre-Val de Loire", "COR": "Corse",
+    "GES": "Grand Est", "HDF": "Hauts-de-France", "NOR": "Normandie",
+    "NAQ": "Nouvelle-Aquitaine", "OCC": "Occitanie", "PDL": "Pays de la Loire",
+    "PAC": "Provence-Alpes-Côte d'Azur",
+}
+
+GERMANY_STATES = {
+    "BW": "Baden-Württemberg", "BY": "Bavaria", "BE": "Berlin",
+    "BB": "Brandenburg", "HB": "Bremen", "HH": "Hamburg",
+    "HE": "Hesse", "MV": "Mecklenburg-Vorpommern", "NI": "Lower Saxony",
+    "NW": "North Rhine-Westphalia", "RP": "Rhineland-Palatinate", "SL": "Saarland",
+    "SN": "Saxony", "ST": "Saxony-Anhalt", "SH": "Schleswig-Holstein",
+    "TH": "Thuringia",
+}
+
+BRAZIL_STATES = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas",
+    "BA": "Bahia", "CE": "Ceará", "DF": "Distrito Federal", "ES": "Espírito Santo",
+    "GO": "Goiás", "MA": "Maranhão", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais", "PA": "Pará", "PB": "Paraíba", "PR": "Paraná",
+    "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte", "RS": "Rio Grande do Sul", "RO": "Rondônia",
+    "RR": "Roraima", "SC": "Santa Catarina", "SP": "São Paulo",
+    "SE": "Sergipe", "TO": "Tocantins",
+}
+
+INDIA_STATES = {
+    "AP": "Andhra Pradesh", "AR": "Arunachal Pradesh", "AS": "Assam",
+    "BR": "Bihar", "CG": "Chhattisgarh", "GA": "Goa", "GJ": "Gujarat",
+    "HR": "Haryana", "HP": "Himachal Pradesh", "JH": "Jharkhand",
+    "KA": "Karnataka", "KL": "Kerala", "MP": "Madhya Pradesh",
+    "MH": "Maharashtra", "MN": "Manipur", "ML": "Meghalaya",
+    "MZ": "Mizoram", "NL": "Nagaland", "OD": "Odisha", "PB": "Punjab",
+    "RJ": "Rajasthan", "SK": "Sikkim", "TN": "Tamil Nadu", "TS": "Telangana",
+    "TR": "Tripura", "UP": "Uttar Pradesh", "UK": "Uttarakhand",
+    "WB": "West Bengal", "DL": "Delhi",
+}
+
+CHINA_PROVINCES = {
+    "AH": "Anhui", "BJ": "Beijing", "CQ": "Chongqing", "FJ": "Fujian",
+    "GS": "Gansu", "GD": "Guangdong", "GX": "Guangxi", "GZ": "Guizhou",
+    "HI": "Hainan", "HE": "Hebei", "HL": "Heilongjiang", "HA": "Henan",
+    "HB": "Hubei", "HN": "Hunan", "JS": "Jiangsu", "JX": "Jiangxi",
+    "JL": "Jilin", "LN": "Liaoning", "NM": "Inner Mongolia", "NX": "Ningxia",
+    "QH": "Qinghai", "SN": "Shaanxi", "SD": "Shandong", "SH": "Shanghai",
+    "SX": "Shanxi", "SC": "Sichuan", "TJ": "Tianjin", "XJ": "Xinjiang",
+    "XZ": "Tibet", "YN": "Yunnan", "ZJ": "Zhejiang",
+}
+
+# Master lookup: country keyword → state abbr map
+INTL_STATE_LOOKUP = {
+    "mexico":        MEXICO_STATES,
+    "france":        FRANCE_REGIONS,
+    "germany":       GERMANY_STATES,
+    "brazil":        BRAZIL_STATES,
+    "brasil":        BRAZIL_STATES,
+    "india":         INDIA_STATES,
+    "china":         CHINA_PROVINCES,
+}
+
+def lookup_intl_state(state: str, country: str) -> str:
+    """Try static lookup first; return original if not found (Groq handles the rest)."""
+    if not state:
+        return state
+    country_key = country.strip().lower()
+    state_upper = state.strip().upper()
+    for key, table in INTL_STATE_LOOKUP.items():
+        if key in country_key:
+            if state_upper in table:
+                return table[state_upper]
+    return state  # unchanged — Groq will handle it if key provided
+
+
 
 def format_dataframe(df: pd.DataFrame, groq_api_key: str = "") -> pd.DataFrame:
     """
@@ -374,12 +466,13 @@ def format_dataframe(df: pd.DataFrame, groq_api_key: str = "") -> pd.DataFrame:
             axis=1,
         )
 
-    # ── 5. Batch expand international state abbreviations via Groq ───────────
+    # ── 5. Batch expand remaining international state abbreviations via Groq ────
     if "State" in df.columns and groq_api_key:
         intl_mask = df.apply(
             lambda row: bool(safe(row["State"])) and
                         not is_usa_or_canada(safe(row.get("Country", ""))) and
-                        len(safe(row["State"])) <= 6,
+                        len(safe(row["State"])) <= 6 and
+                        safe(row["State"]).isupper(),  # still looks like abbreviation
             axis=1,
         )
         if intl_mask.any():
