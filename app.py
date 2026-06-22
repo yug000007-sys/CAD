@@ -271,6 +271,26 @@ with st.spinner("Processing leads..."):
         st.error(f"Processing error: {e}")
         st.stop()
 
+# ── Format ────────────────────────────────────────────────────────────────────
+from formatter import format_dataframe
+
+format_steps = []
+if result_df["State"].apply(lambda v: bool(str(v).strip()) and len(str(v).strip()) <= 6).any():
+    format_steps.append("expanding state abbreviations")
+needs_zip_fill = (
+    result_df["City"].apply(lambda v: not str(v).strip() or str(v).strip().lower() == "nan") |
+    result_df["State"].apply(lambda v: not str(v).strip() or str(v).strip().lower() == "nan")
+) & result_df["ZipCode"].apply(lambda v: bool(str(v).strip()) and str(v).strip().lower() != "nan")
+if needs_zip_fill.any():
+    format_steps.append(f"looking up {needs_zip_fill.sum()} zip codes")
+
+spinner_msg = "Formatting & enriching data" + (f" ({', '.join(format_steps)})" if format_steps else "") + "..."
+with st.spinner(spinner_msg):
+    try:
+        result_df = format_dataframe(result_df, groq_api_key=api_key or "")
+    except Exception as e:
+        st.warning(f"Formatting partially failed: {e}. Raw data preserved.")
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 c1, c2, c3 = st.columns(3)
 c1.metric("Unique contacts", len(result_df))
