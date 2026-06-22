@@ -1,7 +1,7 @@
 """
 Core lead processing engine.
 Handles: xlsx, msg_xlsx, msg_body_csv input formats.
-Merges by email, builds LeadComments HTML, translates non-Latin text.
+Merges by email, builds per-project LeadComments HTML, translates non-Latin text.
 """
 
 import io, re, csv
@@ -49,61 +49,46 @@ def read_xlsx(file_bytes: bytes) -> pd.DataFrame:
     return pd.read_excel(io.BytesIO(file_bytes))
 
 def read_msg_xlsx(file_bytes: bytes) -> pd.DataFrame:
-    """Extract embedded xlsx/zip from inside a .msg file."""
     pk = file_bytes.find(b"PK\x03\x04")
     if pk == -1:
         raise ValueError("No embedded Excel found in this .msg file.")
     df = pd.read_excel(io.BytesIO(file_bytes[pk:]))
-    # If first row is actually the header (Cadenas style), detect & fix
-    if df.columns[0].startswith("Unnamed"):
+    if str(df.columns[0]).startswith("Unnamed"):
         df.columns = df.iloc[0]
         df = df[1:].reset_index(drop=True)
     return df
 
 def read_msg_body_csv(file_bytes: bytes) -> pd.DataFrame:
-    """Extract CSV data embedded as text in a .msg body (handles multiline quoted fields)."""
-    # Decode with latin1 to preserve all byte values as characters
     text = file_bytes.decode("latin1", errors="replace")
-
-    # Find the start of the CSV header line
     header_match = re.search(
         r'(?:^|\n|\x00)((?:"?(?:Email|Lead Source|First.?Name|ID|Customer)"?|ID)[^\n]*,[^\n]+)',
         text, re.I
     )
     if not header_match:
         raise ValueError("No CSV header found in the .msg body.")
-
     csv_start = header_match.start(1)
     csv_text = text[csv_start:]
-
-    # Find the end: stop at a long null run (binary content)
     null_run = re.search(r'\x00{10,}', csv_text)
     if null_run:
         csv_text = csv_text[:null_run.start()]
-
-    # Remove non-printable chars except newline/tab
     csv_text = re.sub(r'[^\x09\x0a\x0d\x20-\x7e\x80-\xff]', '', csv_text).strip()
-
     try:
         reader = csv.DictReader(io.StringIO(csv_text))
         rows = list(reader)
     except Exception as e:
         raise ValueError(f"CSV parse error: {e}")
-
     if not rows:
         raise ValueError("No data rows found in the .msg CSV.")
-
     df = pd.DataFrame(rows)
-    # Clean column names
     df.columns = [re.sub(r'^["\s]+|["\s]+$', '', c) for c in df.columns]
-    # Filter rows where Email column has a valid email
     if "Email" in df.columns:
         df = df[df["Email"].str.contains(r"@", na=False)].reset_index(drop=True)
     return df
 
-# ── LeadComments builder ──────────────────────────────────────────────────────
+# ── LeadComments builders ─────────────────────────────────────────────────────
 
-def build_lead_comments(group_rows, config: dict) -> str:
+def build_lead_comments_default(group_rows, config: dict) -> str:
+    """Standard HTML comment block used by most projects."""
     intro = config.get("lead_intro", "")
     outro = config.get("lead_outro", "")
     fields = config.get("comment_fields", [])
@@ -111,32 +96,67 @@ def build_lead_comments(group_rows, config: dict) -> str:
     for row in group_rows:
         for label, col in fields:
             val = get_val(row, col)
-            html += f"<b>{label}: </b>{val}<br>"
+            if val:
+                html += f"<b>{label}: </b>{val}<br>"
         html += "<br>"
     if outro:
         html += outro
     return html.strip()
 
-# ── Passthrough merge (Nason / AMI — already in template format) ──────────────
+def build_lead_comments_nason(group_rows, config: dict) -> str:
+    """Nason format: MODEL NUMBER:{model} and cad name: {cad}"""
+    intro = config.get("lead_intro", "This is a registered user who has downloaded the cad drawing for")
+    outro = config.get("lead_outro", "please contact the customer for service and product opportunities.")
+    html = f"{intro} <br><br>"
+    for row in group_rows:
+        model = get_val(row, "CAD name") or get_val(row, "Part number") or ""
+        cad   = get_val(row, "Standardname") or get_val(row, "CAD format") or ""
+        if model:
+            html += f"MODEL NUMBER:{model} and cad name: {cad}<br><br>"
+    html += outro
+    return html.strip()
+
+def build_lead_comments_leak_defense(group_rows, config: dict) -> str:
+    """Leak Defense: Notes to Rep field IS the comment body, plus lead source info."""
+    fields = config.get("comment_fields", [])
+    parts = []
+    for row in group_rows:
+        for label, col in fields:
+            val = get_val(row, col)
+            if val and label == "Notes":
+                parts.append(val)
+            elif val:
+                parts.append(f"<b>{label}: </b>{val}<br>")
+    return "<br>".join(parts).strip()
+
+def build_lead_comments(group_rows, config: dict) -> str:
+    template = config.get("comment_template", "default")
+    if template == "nason":
+        return build_lead_comments_nason(group_rows, config)
+    elif template == "leak_defense":
+        return build_lead_comments_leak_defense(group_rows, config)
+    else:
+        return build_lead_comments_default(group_rows, config)
+
+# ── Passthrough merge ─────────────────────────────────────────────────────────
 
 def merge_passthrough(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     email_col = config["merge_by"]
     rows = []
     for email, group in df.groupby(email_col, sort=False):
         first = group.iloc[0]
-        row = {col: str(first.get(col, "") or "") for col in TEMPLATE_COLS if col in df.columns}
+        row = {}
         for col in TEMPLATE_COLS:
-            if col not in row:
-                row[col] = ""
-        # Merge LeadComments by appending
-        comments = group["LeadComments"].dropna().astype(str).tolist()
+            row[col] = str(first.get(col, "") or "") if col in df.columns else ""
+        # Merge LeadComments
+        comments = group["LeadComments"].dropna().astype(str).tolist() if "LeadComments" in group else []
         row["LeadComments"] = "\n\n---\n\n".join(c for c in comments if c.strip())
         rows.append(row)
     return pd.DataFrame(rows, columns=TEMPLATE_COLS)
 
-# ── Nexen customer name cleaner ("Alex Best (12282)" → "Alex Best") ──────────
+# ── Nexen name cleaner ────────────────────────────────────────────────────────
 
-def clean_nexen_name(val: str):
+def clean_nexen_name(val: str) -> str:
     return re.sub(r"\s*\(\d+\)\s*$", "", str(val or "")).strip()
 
 # ── Main processor ────────────────────────────────────────────────────────────
@@ -145,7 +165,6 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
     fmt = config["input_format"]
     src = config.get("source_type", "")
 
-    # --- Read raw data ---
     if fmt == "xlsx":
         df = read_xlsx(file_bytes)
     elif fmt == "msg_xlsx":
@@ -155,27 +174,23 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
     else:
         raise ValueError(f"Unknown input_format: {fmt}")
 
-    # --- Passthrough (already in template format) ---
     if src == "passthrough":
         return merge_passthrough(df, config)
 
     col_map = config["col_map"]
     email_col = config["merge_by"]
     rows_out = []
+    email_list = list(df.groupby(email_col, sort=False).groups.keys())
 
-    for email, group in df.groupby(email_col, sort=False):
+    for pos, email in enumerate(email_list):
+        group = df[df[email_col] == email]
         first = group.iloc[0]
         group_rows = group.to_dict("records")
 
         def t(field):
-            """Get translated value if available, else raw."""
-            if translated and field in translated:
-                idx = df[df[email_col] == email].index[0]
-                pos = list(df.groupby(email_col, sort=False).groups.keys()).index(email)
-                return translated[field].get(pos, get_val(first, col_map.get(field, "")))
+            if translated and field in translated and pos in translated[field]:
+                return translated[field][pos]
             raw_col = col_map.get(field, "")
-            if isinstance(raw_col, list):
-                return get_val(first, raw_col)
             return get_val(first, raw_col)
 
         row = {col: "" for col in TEMPLATE_COLS}
@@ -192,7 +207,6 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
         row["LeadSource1"]   = config.get("lead_source_1", "")
         row["LeadSource2"]   = config.get("lead_source_2", "")
 
-        # Address
         addr_cols = col_map.get("Address", [])
         if isinstance(addr_cols, list):
             parts = [str(get_val(first, c)).strip() for c in addr_cols]
@@ -207,10 +221,9 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
 
 
 def detect_non_latin_fields(file_bytes: bytes, config: dict) -> dict:
-    """Return {field_name: {email_index: value}} for fields needing translation."""
-    fmt = config["input_format"]
     if config.get("source_type") == "passthrough":
         return {}
+    fmt = config["input_format"]
     try:
         if fmt == "xlsx":
             df = read_xlsx(file_bytes)
@@ -227,11 +240,10 @@ def detect_non_latin_fields(file_bytes: bytes, config: dict) -> dict:
     email_col = config["merge_by"]
     translate_fields = ["FirstName", "LastName", "Company", "City", "Country", "Address"]
     to_translate = {}
-
     emails = list(df.groupby(email_col, sort=False).groups.keys())
+
     for i, email in enumerate(emails):
-        group = df[df[email_col] == email]
-        first = group.iloc[0]
+        first = df[df[email_col] == email].iloc[0]
         for field in translate_fields:
             raw_col = col_map.get(field, "")
             if isinstance(raw_col, list):

@@ -8,8 +8,8 @@ PROJECTS = {
     # ─── T-SLOTS (TraceParts raw xlsx) ───────────────────────────────────────
     "T-Slots (TraceParts)": {
         "description": "TraceParts CAD download leads for Bonnell Aluminum T-Slots",
-        "input_format": "xlsx",          # xlsx | msg_xlsx | msg_csv | msg_body_csv
-        "source_type": "traceparts",     # used by processor to pick parsing logic
+        "input_format": "xlsx",
+        "source_type": "traceparts",
         "merge_by": "Email",
         "lead_intro": "This is a registered user who has downloaded the CAD drawing for T SLOTS.",
         "lead_outro": "Please contact the customer for services or product opportunities.",
@@ -28,28 +28,27 @@ PROJECTS = {
             "PhoneSupplied": "Phone",
         },
         "comment_fields": [
-            ("Part number",              "Part number"),
-            ("Part description",         "Part description"),
-            ("CAD Format",               "CAD format"),
-            ("Date",                     "Date"),
-            ("Status",                   "Status"),
-            ("Origin (Web site)",        "Origin (Web site)"),
-            ("Catalog",                  "Catalog"),
-            ("Opt-in (emailing allowed)","Opt-in (emailing allowed)"),
+            ("Part number",               "Part number"),
+            ("Part description",          "Part description"),
+            ("CAD Format",                "CAD format"),
+            ("Date",                      "Date"),
+            ("Status",                    "Status"),
+            ("Origin (Web site)",         "Origin (Web site)"),
+            ("Catalog",                   "Catalog"),
+            ("Opt-in (emailing allowed)", "Opt-in (emailing allowed)"),
         ],
     },
 
-    # ─── CADENAS (msg with embedded xlsx, no header row) ─────────────────────
+    # ─── CADENAS (msg with embedded xlsx) ────────────────────────────────────
     "Cadenas": {
         "description": "Cadenas CAD downloads — Excel attachment inside .msg",
         "input_format": "msg_xlsx",
         "source_type": "cadenas",
-        "msg_header_row": 0,            # row index that contains headers (0 = first row IS header)
         "merge_by": "Email",
-        "lead_intro": "This is a registered user who has downloaded the CAD drawing via Cadenas.",
-        "lead_outro": "Please contact the customer for services or product opportunities.",
-        "lead_source_1": "Cadenas",
-        "lead_source_2": "CAD Downloads",
+        "lead_intro": "This is a registered user who has downloaded the CAD drawing.",
+        "lead_outro": "Please contact the customer for service and product opportunities.",
+        "lead_source_1": "Website",
+        "lead_source_2": "Cadenas",
         "col_map": {
             "FirstName":     "Name",
             "LastName":      "",
@@ -63,15 +62,33 @@ PROJECTS = {
             "PhoneSupplied": "Phone",
         },
         "comment_fields": [
-            ("CAD Name",    "CAD name"),
-            ("Standard",    "Standardname"),
-            ("Date",        "Process end"),
+            ("Model Number",  "CAD name"),
+            ("CAD Name",      "Standardname"),
+            ("Sensor Type",   "Sensor Type"),
+            ("Date",          "Process end"),
         ],
     },
 
-    # ─── WAGO (msg with embedded xlsx — WEEK_24 style) ───────────────────────
+    # ─── NASON (passthrough — already in template format, Cadenas source) ────
+    "Nason": {
+        "description": "Nason leads — already in output format, merge duplicates only",
+        "input_format": "xlsx",
+        "source_type": "passthrough",
+        "merge_by": "Email",
+        "lead_intro": "This is a registered user who has downloaded the cad drawing for",
+        "lead_outro": "please contact the customer for service and product opportunities.",
+        "lead_source_1": "Website",
+        "lead_source_2": "Cadenas",
+        "col_map": {},
+        "comment_fields": [],
+        # Nason LeadComments pattern:
+        # MODEL NUMBER:{model} and cad name: {cad_name}
+        "comment_template": "nason",
+    },
+
+    # ─── WAGO (msg with embedded xlsx — PARTcommunity) ───────────────────────
     "WAGO (PARTcommunity)": {
-        "description": "WAGO CAD downloads via PARTcommunity — Excel in .msg",
+        "description": "WAGO CAD downloads via PARTcommunity — Excel attachment in .msg",
         "input_format": "msg_xlsx",
         "source_type": "wago",
         "merge_by": "Email",
@@ -92,15 +109,15 @@ PROJECTS = {
             "PhoneSupplied": "Phone",
         },
         "comment_fields": [
-            ("CAD Name",         "CADname"),
-            ("Standard",         "Standardname"),
-            ("Dimension",        "CADdimension"),
-            ("Date",             "Process_end"),
-            ("Server Type",      "Servertype"),
+            ("Part Number",    "Standardname"),
+            ("CAD Name",       "CADname"),
+            ("CAD Dimension",  "CADdimension"),
+            ("Date",           "Process_end"),
+            ("Server Type",    "Servertype"),
         ],
     },
 
-    # ─── NEXEN (msg with CSV in body — Downloads_6_17 style) ─────────────────
+    # ─── NEXEN (msg with CSV in body) ────────────────────────────────────────
     "Nexen Group": {
         "description": "Nexen CAD downloads — CSV data in email body",
         "input_format": "msg_body_csv",
@@ -111,7 +128,7 @@ PROJECTS = {
         "lead_source_1": "Nexen",
         "lead_source_2": "CAD Downloads",
         "col_map": {
-            "FirstName":     "Customer",     # "Alex Best (12282)" → strip ID
+            "FirstName":     "Customer",
             "LastName":      "",
             "ContactTitle":  "",
             "Company":       "Company",
@@ -159,6 +176,45 @@ PROJECTS = {
             ("Origin",        "Origin of Download"),
             ("Catalog",       "Catalog"),
             ("Opt-In",        "Opt In Status"),
+            ("Industry",      "Industry"),
+            ("Company Size",  "Company Size"),
+        ],
+    },
+
+    # ─── WIELAND (TraceParts .msg with embedded xlsx) ─────────────────────────
+    "Wieland Electric (TraceParts)": {
+        "description": "Wieland Electric CAD downloads via TraceParts — Excel in .msg",
+        "input_format": "msg_xlsx",
+        "source_type": "traceparts",
+        "merge_by": "Email",
+        "lead_intro": "This is a registered user who has downloaded the CAD drawing for Wieland Electric.",
+        "lead_outro": "Please contact the customer for services or product opportunities.",
+        "lead_source_1": "Traceparts",
+        "lead_source_2": "CAD Downloads",
+        "col_map": {
+            "FirstName":     "First name",
+            "LastName":      "Name",
+            "ContactTitle":  "Job",
+            "Company":       "Company",
+            "Address":       ["Address1", "Address2", "Address3"],
+            "City":          "City",
+            "State":         "State (USA)",
+            "ZipCode":       "Zip/Postal Code",
+            "Country":       "Country name",
+            "PhoneSupplied": "Phone",
+        },
+        "comment_fields": [
+            ("Part number",               "Part number"),
+            ("Part description",          "Part description"),
+            ("Product name",              "Product name"),
+            ("CAD Format",                "CAD format"),
+            ("Date",                      "Date"),
+            ("Status",                    "Status"),
+            ("Origin (Web site)",         "Origin (Web site)"),
+            ("Catalog",                   "Catalog"),
+            ("Opt-in (emailing allowed)", "Opt-in (emailing allowed)"),
+            ("Field of activity",         "Field of activity"),
+            ("Department",                "Department/Service"),
         ],
     },
 
@@ -168,8 +224,8 @@ PROJECTS = {
         "input_format": "msg_body_csv",
         "source_type": "leak_defense",
         "merge_by": "Email",
-        "lead_intro": "This person recently completed the Leak Defense Installer Certification program.",
-        "lead_outro": "Please review their qualifications and follow-up with them to address any questions.",
+        "lead_intro": "",   # Notes to Rep field already contains the full intro
+        "lead_outro": "",
         "lead_source_1": "Social-Facebook",
         "lead_source_2": "Become a Leak Defense Certified Contractor",
         "col_map": {
@@ -186,25 +242,13 @@ PROJECTS = {
         },
         "comment_fields": [
             ("Lead Source 3", "Lead Source 3"),
+            ("Brand",         "Brand"),
             ("Notes",         "Notes to Rep"),
         ],
+        "comment_template": "leak_defense",  # Notes to Rep IS the comment body
     },
 
-    # ─── NASON (already-processed main file, pass-through) ───────────────────
-    "Nason": {
-        "description": "Nason leads — already in output format, merge duplicates only",
-        "input_format": "xlsx",
-        "source_type": "passthrough",   # columns already match template
-        "merge_by": "Email",
-        "lead_intro": "",
-        "lead_outro": "",
-        "lead_source_1": "Website",
-        "lead_source_2": "Cadenas",
-        "col_map": {},                  # passthrough — columns already named correctly
-        "comment_fields": [],
-    },
-
-    # ─── TSUBAKI (xlsx with different schema) ────────────────────────────────
+    # ─── TSUBAKI (Thomasnet xlsx) ─────────────────────────────────────────────
     "Tsubaki": {
         "description": "Tsubaki CAD user downloads from Thomasnet",
         "input_format": "xlsx",
@@ -228,14 +272,16 @@ PROJECTS = {
         },
         "comment_fields": [
             ("Product",       "Breadcrumb_P1"),
-            ("Order Number",  "OrderNumber"),
-            ("Format",        "Format"),
+            ("Item Number",   "OrderNumber"),
+            ("CAD Format",    "Format"),
             ("Date",          "DateAndTime"),
             ("Source",        "Source"),
+            ("Opted In",      "OptedIn"),
+            ("Download Page", "DownloadPage"),
         ],
     },
 
-    # ─── AMI BEARINGS (already-processed main file) ───────────────────────────
+    # ─── AMI BEARINGS (Thomasnet xlsx — passthrough) ──────────────────────────
     "AMI Bearings": {
         "description": "AMI Bearings leads — already in output format, merge duplicates only",
         "input_format": "xlsx",
