@@ -43,10 +43,11 @@ with st.sidebar:
 fmt = config["input_format"]
 accept_map = {
     "xlsx":         ["xlsx", "xls"],
+    "csv":          ["csv", "msg"],   # Nexen accepts both
     "msg_xlsx":     ["msg"],
     "msg_body_csv": ["msg"],
 }
-accepted = accept_map.get(fmt, ["xlsx", "msg"])
+accepted = accept_map.get(fmt, ["xlsx", "msg", "csv"])
 
 uploaded = st.file_uploader(
     f"Upload raw file for **{project_name}**",
@@ -156,12 +157,15 @@ if show_picker:
 # ── Process ───────────────────────────────────────────────────────────────────
 st.divider()
 with st.spinner("Processing leads..."):
+    # For Nexen: auto-detect if uploaded file is .msg or .csv
     active_config = {
         **config,
         "comment_fields": selected_fields,
         "lead_source_1":  lead_source_1,
         "lead_source_2":  lead_source_2,
     }
+    if config["input_format"] == "csv" and uploaded.name.lower().endswith(".msg"):
+        active_config["input_format"] = "msg_body_csv"
     try:
         result_df = process(file_bytes, active_config, translated if translated else None)
     except Exception as e:

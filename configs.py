@@ -119,11 +119,11 @@ PROJECTS = {
 
     # ─── NEXEN (msg with CSV in body) ────────────────────────────────────────
     "Nexen Group": {
-        "description": "Nexen CAD downloads — CSV data in email body",
+        "description": "Nexen CAD downloads — CSV data in email body (.msg)",
         "input_format": "msg_body_csv",
         "source_type": "nexen",
         "merge_by": "Email",
-        "lead_intro": "This is a registered user who has downloaded the CAD drawing for Nexen Group.",
+        "lead_intro": "This lead is generated from CAD Download:",
         "lead_outro": "Please contact the customer for product and service opportunities.",
         "lead_source_1": "Nexen",
         "lead_source_2": "CAD Downloads",
@@ -140,10 +140,11 @@ PROJECTS = {
             "PhoneSupplied": "Phone",
         },
         "comment_fields": [
-            ("Product",       "Product"),
+            ("Part Number",   "Product"),
             ("Content Type",  "Content Type"),
             ("Date",          "Accessed At"),
         ],
+        "comment_template": "nexen",
     },
 
     # ─── PROCO (msg with embedded xlsx — FW Daily Catalog Statistics) ─────────

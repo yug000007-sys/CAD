@@ -45,6 +45,15 @@ def get_val(row, col):
 
 # ── File readers ──────────────────────────────────────────────────────────────
 
+def read_csv(file_bytes: bytes) -> pd.DataFrame:
+    for enc in ("utf-8", "latin1", "cp1252"):
+        try:
+            return pd.read_csv(io.BytesIO(file_bytes), encoding=enc)
+        except Exception:
+            continue
+    raise ValueError("Could not read CSV file.")
+
+
 def read_xlsx(file_bytes: bytes) -> pd.DataFrame:
     return pd.read_excel(io.BytesIO(file_bytes))
 
@@ -86,6 +95,56 @@ def read_msg_body_csv(file_bytes: bytes) -> pd.DataFrame:
     return df
 
 # ── LeadComments builders ─────────────────────────────────────────────────────
+
+def build_lead_comments_nexen(group_rows, config: dict) -> str:
+    """Nexen format: grouped unique products + content types on single lines."""
+    intro = config.get("lead_intro", "This lead is generated from CAD Download:")
+    outro = config.get("lead_outro", "")
+
+    # Collect selected comment fields from config
+    fields = config.get("comment_fields", [])
+    field_map = {label: col for label, col in fields}
+
+    # Get selected field labels (respects field picker)
+    product_col      = field_map.get("Part Number",   "Product")
+    content_type_col = field_map.get("Content Type",  "Content Type")
+    date_col         = field_map.get("Date",           "Accessed At")
+
+    # Deduplicated values preserving order
+    def unique_vals(col):
+        seen, out = set(), []
+        for row in group_rows:
+            v = get_val(row, col).strip()
+            if v and v not in seen:
+                seen.add(v)
+                out.append(v)
+        return out
+
+    html = f"{intro}<br>"
+
+    # Only include lines for fields that are selected
+    selected_labels = [label for label, _ in fields]
+
+    if "Part Number" in selected_labels:
+        products = unique_vals(product_col)
+        if products:
+            html += f"<br><b>Part Number: </b>{', '.join(products)}"
+
+    if "Content Type" in selected_labels:
+        ctypes = unique_vals(content_type_col)
+        if ctypes:
+            html += f"<br><b>Content Type: </b>{', '.join(ctypes)}"
+
+    if "Date" in selected_labels:
+        dates = unique_vals(date_col)
+        if dates:
+            html += f"<br><b>Date: </b>{', '.join(dates)}"
+
+    if outro:
+        html += f"<br><br>{outro}"
+
+    return html.strip()
+
 
 def build_lead_comments_default(group_rows, config: dict) -> str:
     """Standard HTML comment block used by most projects."""
@@ -131,10 +190,13 @@ def build_lead_comments_leak_defense(group_rows, config: dict) -> str:
 
 def build_lead_comments(group_rows, config: dict) -> str:
     template = config.get("comment_template", "default")
-    if template == "nason":
+    src      = config.get("source_type", "")
+    if template == "nason" or src == "nason":
         return build_lead_comments_nason(group_rows, config)
-    elif template == "leak_defense":
+    elif template == "leak_defense" or src == "leak_defense":
         return build_lead_comments_leak_defense(group_rows, config)
+    elif template == "nexen" or src == "nexen":
+        return build_lead_comments_nexen(group_rows, config)
     else:
         return build_lead_comments_default(group_rows, config)
 
@@ -167,6 +229,8 @@ def process(file_bytes: bytes, config: dict, translated: dict = None) -> pd.Data
 
     if fmt == "xlsx":
         df = read_xlsx(file_bytes)
+    elif fmt == "csv":
+        df = read_csv(file_bytes)
     elif fmt == "msg_xlsx":
         df = read_msg_xlsx(file_bytes)
     elif fmt == "msg_body_csv":
@@ -227,6 +291,8 @@ def detect_non_latin_fields(file_bytes: bytes, config: dict) -> dict:
     try:
         if fmt == "xlsx":
             df = read_xlsx(file_bytes)
+        elif fmt == "csv":
+            df = read_csv(file_bytes)
         elif fmt == "msg_xlsx":
             df = read_msg_xlsx(file_bytes)
         elif fmt == "msg_body_csv":
