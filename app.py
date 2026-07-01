@@ -31,6 +31,7 @@ with st.sidebar:
     )
 
 is_universal = config.get("source_type") == "universal"
+is_itt_batch = config.get("source_type") == "itt_batch"
 
 # ── File upload — all projects accept msg, xlsx, csv ─────────────────────────
 uploaded = st.file_uploader(
@@ -47,7 +48,7 @@ filename   = uploaded.name
 st.success(f"✅ **{filename}** loaded ({len(file_bytes):,} bytes)")
 
 # ── Non-Latin detection & translation ────────────────────────────────────────
-if not is_universal:
+if not is_universal and not is_itt_batch:
     with st.spinner("Scanning for non-Latin text..."):
         to_translate = detect_non_latin_fields(file_bytes, config, filename)
 
@@ -97,6 +98,19 @@ if not is_universal:
                 st.error(f"Translation failed: {e}. Proceeding with originals.")
 else:
     translated = {}
+
+# ── ITT_Batch: Event Name field ───────────────────────────────────────────────
+if config.get("source_type") == "itt_batch":
+    st.divider()
+    st.subheader("🎪 Event Details")
+    event_name = st.text_input(
+        "Event Name",
+        placeholder="e.g. Pre-Show E-Blast Automate 2026",
+        help="This will appear in the LeadComments: 'This Informational lead was generated from {Event Name}.'"
+    )
+    # Inject event name as lead_intro
+    if "active_config" not in dir():
+        pass  # will be set below
 
 # ── Lead Sources ──────────────────────────────────────────────────────────────
 st.divider()
@@ -190,9 +204,9 @@ if is_universal:
         if col_name == email_col_pick:
             continue  # skip the email column
         row_cols = st.columns([0.5, 3, 3])
-        checked = row_cols[0].checkbox("", key=f"u_chk_{i}", label_visibility="collapsed")
+        checked = row_cols[0].checkbox(" ", key=f"u_chk_{i}", label_visibility="collapsed")
         row_cols[1].markdown(f"`{col_name}`")
-        label = row_cols[2].text_input("", value=col_name, key=f"u_lbl_{i}",
+        label = row_cols[2].text_input(" ", value=col_name, key=f"u_lbl_{i}",
                                         label_visibility="collapsed")
         if checked:
             selected_fields.append((label, col_name))
@@ -210,6 +224,18 @@ if is_universal:
         "lead_source_2":  lead_source_2,
         "lead_source_3":  lead_source_3,
         "input_format":   "auto",
+    }
+
+# ── ITT_BATCH: no field picker, just wire event name ─────────────────────────
+elif config.get("source_type") == "itt_batch":
+    resolved_fmt = "auto"
+    active_config = {
+        **config,
+        "input_format":  resolved_fmt,
+        "lead_intro":    event_name if "event_name" in locals() else "",
+        "lead_source_1": lead_source_1,
+        "lead_source_2": lead_source_2,
+        "lead_source_3": lead_source_3,
     }
 
 # ── STANDARD: field picker (checkbox + editable label) ───────────────────────
@@ -233,10 +259,10 @@ else:
         selected_fields = []
         for i, (default_label, col_key) in enumerate(all_comment_fields):
             row_cols = st.columns([0.5, 3, 3])
-            checked = row_cols[0].checkbox("", value=True, key=f"s_chk_{i}",
+            checked = row_cols[0].checkbox(" ", value=True, key=f"s_chk_{i}",
                                             label_visibility="collapsed")
             row_cols[1].markdown(f"`{col_key}`")
-            label = row_cols[2].text_input("", value=default_label, key=f"s_lbl_{i}",
+            label = row_cols[2].text_input(" ", value=default_label, key=f"s_lbl_{i}",
                                             label_visibility="collapsed")
             if checked:
                 selected_fields.append((label, col_key))

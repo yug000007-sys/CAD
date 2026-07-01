@@ -207,7 +207,96 @@ def build_lead_comments_nexen(group_rows, config: dict) -> str:
         html += f"<br><br>{outro}"
     return html.strip()
 
-def build_lead_comments_default(group_rows, config: dict) -> str:
+def parse_combined_address(address: str) -> dict:
+    """
+    Parse a combined address string like:
+    '1450 Northeast 138th Avenue, Vancouver, WA 98684, United States'
+    into: street, city, state, zip, country
+    """
+    if not address or str(address).strip().lower() in ("nan", "none", ""):
+        return {"street": "", "city": "", "state": "", "zip": "", "country": ""}
+
+    parts = [p.strip() for p in str(address).split(",")]
+    result = {"street": "", "city": "", "state": "", "zip": "", "country": ""}
+
+    if len(parts) == 1:
+        result["street"] = parts[0]
+        return result
+
+    # Last part is usually country
+    result["country"] = parts[-1].strip()
+
+    # Second to last: "STATE ZIP" or just city
+    if len(parts) >= 3:
+        state_zip = parts[-2].strip()
+        # Try to match "ST 12345" or "ST 12345-6789" or "QC H2Y 1S1" (Canada) or "CDMX 03100"
+        m = re.match(r'^([A-Za-z]{2,4})\s+([A-Z0-9]{3,10}(?:[\s-]\d{4})?)$', state_zip, re.I)
+        if m:
+            result["state"] = m.group(1).upper()
+            result["zip"]   = m.group(2).upper()
+        else:
+            # maybe just a state or just a zip
+            if re.match(r'^[A-Za-z]{2,4}$', state_zip):
+                result["state"] = state_zip.upper()
+            elif re.match(r'^[\dA-Z]{4,10}$', state_zip, re.I):
+                result["zip"] = state_zip.upper()
+            else:
+                result["city"] = state_zip
+
+    if len(parts) >= 4:
+        result["city"]   = parts[-3].strip()
+        result["street"] = ", ".join(parts[:-3]).strip()
+    elif len(parts) == 3:
+        result["city"]   = parts[0].strip()
+        result["street"] = ""
+
+    return result
+
+
+def build_lead_comments_itt_batch(group_rows, config: dict) -> str:
+    """
+    ITT_Batch format:
+    This Informational lead was generated from {event_name}.
+    Please contact the customer for product and service opportunities.
+    Other Contacts in this organization:-
+    Full Name: Name1, Name2, Name3
+    E-Mails: email1, email2, email3
+    Title: Title1, Title2, Title3
+    """
+    intro  = config.get("lead_intro", "")
+    outro  = config.get("lead_outro", "Please contact the customer for product and service opportunities.")
+    col_map = config.get("col_map", {})
+
+    name_col  = col_map.get("_fullname", "Full Name")
+    email_col = col_map.get("_email",    "Email")
+    title_col = col_map.get("_title",    "Title")
+
+    names  = []
+    emails = []
+    titles = []
+
+    for row in group_rows:
+        n = get_val(row, name_col)
+        e = get_val(row, email_col)
+        t = get_val(row, title_col)
+        if n: names.append(n)
+        if e: emails.append(e)
+        if t: titles.append(t)
+
+    html  = f"This Informational lead was generated from {intro}.<br>" if intro else ""
+    html += f"{outro}<br>"
+    html += "Other Contacts in this organization:-<br>"
+    if names:
+        html += f"<b>Full Name: </b>{', '.join(names)}<br>"
+    if emails:
+        html += f"<b>E-Mails: </b>{', '.join(emails)}<br>"
+    if titles:
+        html += f"<b>Title: </b>{', '.join(titles)}<br>"
+
+    return html.strip()
+
+
+
     """Standard HTML comment block — one block per download row."""
     intro  = config.get("lead_intro", "")
     outro  = config.get("lead_outro", "")
@@ -258,6 +347,8 @@ def build_lead_comments(group_rows, config: dict) -> str:
         return build_lead_comments_leak_defense(group_rows, config)
     elif template == "nexen" or src == "nexen":
         return build_lead_comments_nexen(group_rows, config)
+    elif template == "itt_batch" or src == "itt_batch":
+        return build_lead_comments_itt_batch(group_rows, config)
     else:
         return build_lead_comments_default(group_rows, config)
 
@@ -303,12 +394,80 @@ def resolve_df(file_bytes: bytes, config: dict, filename: str = "") -> pd.DataFr
 
 # ── Main processor ────────────────────────────────────────────────────────────
 
+def process_itt_batch(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    ITT_Batch: groups rows by Company.
+    - Parses combined Address field into street/city/state/zip/country
+    - Lists all contacts (name, email, title) in LeadComments
+    - Contact fields (FirstName, LastName, Email, Phone) left blank
+    """
+    col_map  = config.get("col_map", {})
+    rows_out = []
+
+    # Auto-detect column names if raw file uses different casing
+    cols_lower = {c.lower().strip(): c for c in df.columns}
+    def find_col(candidates):
+        for c in candidates:
+            if c.lower() in cols_lower:
+                return cols_lower[c.lower()]
+        return ""
+
+    company_col = find_col(["company", "company name", "organization"])
+    address_col = find_col(["address", "full address", "street address", "addr"])
+    name_col    = find_col(["full name", "fullname", "name", "contact name"])
+    email_col   = find_col(["email", "e-mail", "email address"])
+    title_col   = find_col(["title", "job title", "contact title", "position", "role"])
+
+    # Update config col_map with detected columns
+    active_config = {
+        **config,
+        "col_map": {
+            **col_map,
+            "Company":   company_col,
+            "Address":   address_col,
+            "_fullname": name_col,
+            "_email":    email_col,
+            "_title":    title_col,
+        }
+    }
+
+    if not company_col or company_col not in df.columns:
+        raise ValueError("Could not find 'Company' column in the file.")
+
+    for company, group in df.groupby(company_col, sort=False):
+        first = group.iloc[0]
+        group_rows = group.to_dict("records")
+
+        # Parse address from first row
+        raw_addr = get_val(first, address_col)
+        addr = parse_combined_address(raw_addr)
+
+        row = {col: "" for col in TEMPLATE_COLS}
+        row["Company"]  = str(company).strip()
+        row["Address"]  = addr["street"]
+        row["City"]     = addr["city"]
+        row["State"]    = addr["state"]
+        row["ZipCode"]  = addr["zip"]
+        row["Country"]  = addr["country"]
+        row["LeadSource1"] = config.get("lead_source_1", "")
+        row["LeadSource2"] = config.get("lead_source_2", "")
+        row["LeadSource3"] = config.get("lead_source_3", "")
+        row["LeadComments"] = build_lead_comments_itt_batch(group_rows, active_config)
+        rows_out.append(row)
+
+    return pd.DataFrame(rows_out, columns=TEMPLATE_COLS)
+
+
 def process(file_bytes: bytes, config: dict, translated: dict = None, filename: str = "") -> pd.DataFrame:
     src = config.get("source_type", "")
     df  = resolve_df(file_bytes, config, filename)
 
     if src == "passthrough":
         return merge_passthrough(df, config)
+
+    # ITT_Batch: merge by Company, parse combined address, list all contacts in comments
+    if src == "itt_batch":
+        return process_itt_batch(df, config)
 
     col_map   = config.get("col_map", {})
     email_col = config.get("merge_by", "Email")

@@ -282,6 +282,27 @@ PROJECTS = {
         ],
     },
 
+    # ─── ITT BATCH ────────────────────────────────────────────────────────────
+    "ITT_Batch": {
+        "description": "ITT Batch leads — grouped by Company, all contacts listed in LeadComments",
+        "input_format": "auto",
+        "source_type":  "itt_batch",
+        "merge_by":     "Company",
+        "lead_intro":   "",          # set per file in app (event name)
+        "lead_outro":   "Please contact the customer for product and service opportunities.",
+        "lead_source_1": "",
+        "lead_source_2": "",
+        "col_map": {
+            "Company":   "Company",
+            "Address":   "Address",   # full combined address — parsed in processor
+            "_fullname": "Full Name",
+            "_email":    "Email",
+            "_title":    "Title",
+        },
+        "comment_fields": [],
+        "comment_template": "itt_batch",
+    },
+
     # ─── AMI BEARINGS (Thomasnet xlsx — passthrough) ──────────────────────────
     "AMI Bearings": {
         "description": "AMI Bearings leads — already in output format, merge duplicates only",
