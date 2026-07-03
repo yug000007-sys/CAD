@@ -338,6 +338,32 @@ def build_lead_comments_leak_defense(group_rows, config: dict) -> str:
                 parts.append(f"<b>{label}: </b>{val}<br>")
     return "<br>".join(parts).strip()
 
+def build_lead_comments_default(group_rows, config: dict) -> str:
+    """
+    Default comment builder — formats selected fields as:
+    <b>Label: </b>Value<br>
+    """
+    intro          = config.get("lead_intro", "")
+    outro          = config.get("lead_outro", "")
+    selected_fields = config.get("selected_fields", config.get("comment_fields", []))
+
+    lines = []
+    if intro:
+        lines.append(f"{intro}<br>")
+
+    for row in group_rows:
+        for (label, col_key) in selected_fields:
+            val = get_val(row, col_key)
+            if val:
+                lines.append(f"<b>{label}: </b>{val}<br>")
+        break  # default: use first row only (standard projects are not grouped)
+
+    if outro:
+        lines.append(f"{outro}<br>")
+
+    return "".join(lines).strip()
+
+
 def build_lead_comments(group_rows, config: dict) -> str:
     template = config.get("comment_template", "default")
     src      = config.get("source_type", "")
