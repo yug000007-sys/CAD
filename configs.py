@@ -255,7 +255,7 @@ PROJECTS = {
         "input_format": "auto",
         "source_type": "tsubaki",
         "merge_by": "Email",
-        "lead_source_1": "Thomasnet",
+        "lead_source_1": "Website",
         "lead_source_2": "CAD Downloads",
         "col_map": {
             "FirstName":     "FirstName",
