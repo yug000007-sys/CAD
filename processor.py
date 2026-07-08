@@ -150,16 +150,34 @@ def auto_map_contact_fields(columns: list) -> dict:
     elif ext == "csv":
         return read_csv(file_bytes)
     elif ext == "msg":
-        # Try embedded xlsx first, fall back to CSV in body
-        pk = file_bytes.find(b"PK\x03\x04")
-        if pk != -1:
-            try:
-                return read_msg_xlsx(file_bytes)
-            except Exception:
-                pass
+        df = _read_msg_any(file_bytes)
+        if df is not None:
+            return df
         return read_msg_body_csv(file_bytes)
     else:
         raise ValueError(f"Unsupported file type: .{ext}")
+
+
+def _read_msg_any(file_bytes: bytes):
+    """Try all strategies to read a .msg: embedded xlsx, then proper attachment."""
+    pk = file_bytes.find(b"PK\x03\x04")
+    if pk != -1:
+        try:
+            return read_msg_xlsx(file_bytes)
+        except Exception:
+            pass
+    try:
+        import extract_msg
+        msg = extract_msg.Message(io.BytesIO(file_bytes))
+        for att in msg.attachments:
+            name = (att.longFilename or att.shortFilename or "").lower()
+            if name.endswith((".xlsx", ".xls")):
+                return read_xlsx(att.data)
+            if name.endswith(".csv"):
+                return read_csv(att.data)
+    except Exception:
+        pass
+    return None
 
 def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
     """Auto-detect format from filename extension."""
@@ -169,12 +187,9 @@ def auto_read(file_bytes: bytes, filename: str) -> pd.DataFrame:
     elif ext == "csv":
         return read_csv(file_bytes)
     elif ext == "msg":
-        pk = file_bytes.find(b"PK\x03\x04")
-        if pk != -1:
-            try:
-                return read_msg_xlsx(file_bytes)
-            except Exception:
-                pass
+        df = _read_msg_any(file_bytes)
+        if df is not None:
+            return df
         return read_msg_body_csv(file_bytes)
     else:
         raise ValueError(f"Unsupported file type: .{ext}")
@@ -399,6 +414,24 @@ def process_watts_batch(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return pd.DataFrame(rows_out, columns=TEMPLATE_COLS)
 
 
+def build_lead_comments_tsubaki(group_rows, config: dict) -> str:
+    """
+    Tsubaki format:
+    This customer has downloaded a CAD for the Part Number : RS40 A-1, PL120X165AD
+    Please contact the customer for services and product opportunities.
+    """
+    seen = []
+    for row in group_rows:
+        part = get_val(row, "OrderNumber")
+        if part and part not in seen:
+            seen.append(part)
+
+    parts = ", ".join(seen) if seen else ""
+    html  = f"This customer has downloaded a CAD for the Part Number : {parts}<br>"
+    html += "Please contact the customer for services and product opportunities."
+    return html
+
+
 def build_lead_comments_default(group_rows, config: dict) -> str:
     """
     Default comment builder — formats selected fields as:
@@ -436,6 +469,8 @@ def build_lead_comments(group_rows, config: dict) -> str:
         return build_lead_comments_nexen(group_rows, config)
     elif template == "itt_batch" or src == "itt_batch":
         return build_lead_comments_itt_batch(group_rows, config)
+    elif template == "tsubaki" or src == "tsubaki":
+        return build_lead_comments_tsubaki(group_rows, config)
     else:
         return build_lead_comments_default(group_rows, config)
 

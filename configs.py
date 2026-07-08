@@ -251,12 +251,10 @@ PROJECTS = {
 
     # ─── TSUBAKI (Thomasnet xlsx) ─────────────────────────────────────────────
     "Tsubaki": {
-        "description": "Tsubaki CAD user downloads from Thomasnet",
-        "input_format": "xlsx",
+        "description": "Tsubaki CAD user downloads from Thomasnet — xlsx or msg with xlsx attachment",
+        "input_format": "auto",
         "source_type": "tsubaki",
         "merge_by": "Email",
-        "lead_intro": "This is a registered user who has downloaded the CAD drawing for Tsubaki.",
-        "lead_outro": "Please contact the customer for product and service opportunities.",
         "lead_source_1": "Thomasnet",
         "lead_source_2": "CAD Downloads",
         "col_map": {
@@ -271,15 +269,8 @@ PROJECTS = {
             "Country":       "Country",
             "PhoneSupplied": "",
         },
-        "comment_fields": [
-            ("Product",       "Breadcrumb_P1"),
-            ("Item Number",   "OrderNumber"),
-            ("CAD Format",    "Format"),
-            ("Date",          "DateAndTime"),
-            ("Source",        "Source"),
-            ("Opted In",      "OptedIn"),
-            ("Download Page", "DownloadPage"),
-        ],
+        "comment_fields": [],
+        "comment_template": "tsubaki",
     },
 
     # ─── ITT BATCH ────────────────────────────────────────────────────────────
