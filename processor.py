@@ -67,6 +67,20 @@ def read_msg_xlsx(file_bytes: bytes) -> pd.DataFrame:
         df = df[1:].reset_index(drop=True)
     return df
 
+
+def read_msg_csv_attachment(file_bytes: bytes) -> pd.DataFrame:
+    """Extract a CSV attachment from a .msg file."""
+    try:
+        import extract_msg
+        msg = extract_msg.Message(io.BytesIO(file_bytes))
+        for att in msg.attachments:
+            name = (att.longFilename or att.shortFilename or "").lower()
+            if name.endswith(".csv"):
+                return pd.read_csv(io.BytesIO(att.data))
+    except Exception:
+        pass
+    raise ValueError("No CSV attachment found in this .msg file.")
+
 def read_msg_body_csv(file_bytes: bytes) -> pd.DataFrame:
     text = file_bytes.decode("latin1", errors="replace")
     header_match = re.search(
@@ -338,6 +352,53 @@ def build_lead_comments_leak_defense(group_rows, config: dict) -> str:
                 parts.append(f"<b>{label}: </b>{val}<br>")
     return "<br>".join(parts).strip()
 
+def format_watts_comment(text: str) -> str:
+    """Convert Notes to Rep text: newlines → <br>, URLs → hyperlinks."""
+    if not text or str(text).strip().lower() in ("nan", "none", ""):
+        return ""
+    text = str(text).replace("\\\\n", "\n").replace("\\n", "\n")
+    # Convert URLs to hyperlinks
+    text = re.sub(r"(https?://[^\s]+)", r'<a href="\1">\1</a>', text)
+    # Convert newlines to <br>
+    text = text.replace("\n", "<br>")
+    return text
+
+
+def process_watts_batch(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Watts Batch: one output row per input row (no deduplication).
+    Maps columns directly, formats Notes to Rep as HTML comment.
+    """
+    col_map = config.get("col_map", {})
+
+    def fc(key):
+        """Find column in df by mapped name, case-insensitive."""
+        target = col_map.get(key, key)
+        cols_lower = {c.lower().strip(): c for c in df.columns}
+        return cols_lower.get(target.lower().strip(), target)
+
+    rows_out = []
+    for _, row in df.iterrows():
+        out = {col: "" for col in TEMPLATE_COLS}
+        out["FirstName"]    = str(row.get(fc("FirstName"),   "") or "").strip()
+        out["LastName"]     = str(row.get(fc("LastName"),    "") or "").strip()
+        out["Email"]        = str(row.get(fc("Email"),       "") or "").strip().lower()
+        out["Company"]      = str(row.get(fc("Company"),     "") or "").strip()
+        out["City"]         = str(row.get(fc("City"),        "") or "").strip()
+        out["State"]        = str(row.get(fc("State"),       "") or "").strip()
+        out["Country"]      = str(row.get(fc("Country"),     "") or "").strip()
+        out["ZipCode"]      = str(row.get(fc("ZipCode"),     "") or "").strip()
+        out["LeadSource1"]  = str(row.get(fc("LeadSource1"), "") or "").strip()
+        out["LeadSource2"]  = str(row.get(fc("LeadSource2"), "") or "").strip()
+        out["LeadSource3"]  = str(row.get(fc("LeadSource3"), "") or "").strip()
+        out["Brand"]        = str(row.get(fc("Brand"),       "") or "").strip()
+        out["ContactTitle"] = str(row.get(fc("ContactTitle"),"") or "").strip()
+        out["LeadComments"] = format_watts_comment(row.get(fc("LeadComments"), ""))
+        rows_out.append(out)
+
+    return pd.DataFrame(rows_out, columns=TEMPLATE_COLS)
+
+
 def build_lead_comments_default(group_rows, config: dict) -> str:
     """
     Default comment builder — formats selected fields as:
@@ -404,6 +465,15 @@ def resolve_df(file_bytes: bytes, config: dict, filename: str = "") -> pd.DataFr
     """Read file using config format, with auto fallback for universal projects."""
     fmt = config.get("input_format", "auto")
     src = config.get("source_type", "")
+
+    # Watts Batch: msg with CSV attachment, or plain CSV/xlsx
+    if src == "watts_batch":
+        if filename.lower().endswith(".msg"):
+            return read_msg_csv_attachment(file_bytes)
+        elif filename.lower().endswith(".csv"):
+            return read_csv(file_bytes)
+        else:
+            return read_xlsx(file_bytes)
 
     if fmt == "auto" or src == "universal":
         return auto_read(file_bytes, filename)
@@ -494,6 +564,10 @@ def process(file_bytes: bytes, config: dict, translated: dict = None, filename: 
     # ITT_Batch: merge by Company, parse combined address, list all contacts in comments
     if src == "itt_batch":
         return process_itt_batch(df, config)
+
+    # Watts Batch: one row per input row, format Notes to Rep as HTML
+    if src == "watts_batch":
+        return process_watts_batch(df, config)
 
     col_map   = config.get("col_map", {})
     email_col = config.get("merge_by", "Email")

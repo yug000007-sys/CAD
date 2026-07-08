@@ -30,8 +30,9 @@ with st.sidebar:
         help="Required only for non-Latin text. Free key at console.groq.com",
     )
 
-is_universal = config.get("source_type") == "universal"
-is_itt_batch = config.get("source_type") == "itt_batch"
+is_universal  = config.get("source_type") == "universal"
+is_itt_batch  = config.get("source_type") == "itt_batch"
+is_watts_batch = config.get("source_type") == "watts_batch"
 
 # ── File upload — all projects accept msg, xlsx, csv ─────────────────────────
 uploaded = st.file_uploader(
@@ -48,7 +49,7 @@ filename   = uploaded.name
 st.success(f"✅ **{filename}** loaded ({len(file_bytes):,} bytes)")
 
 # ── Non-Latin detection & translation ────────────────────────────────────────
-if not is_universal and not is_itt_batch:
+if not is_universal and not is_itt_batch and not is_watts_batch:
     with st.spinner("Scanning for non-Latin text..."):
         to_translate = detect_non_latin_fields(file_bytes, config, filename)
 
@@ -236,6 +237,13 @@ elif config.get("source_type") == "itt_batch":
         "lead_source_1": lead_source_1,
         "lead_source_2": lead_source_2,
         "lead_source_3": lead_source_3,
+    }
+
+# ── WATTS_BATCH: no field picker, LeadSources come from file ─────────────────
+elif config.get("source_type") == "watts_batch":
+    active_config = {
+        **config,
+        "input_format": "auto",
     }
 
 # ── STANDARD: field picker (checkbox + editable label) ───────────────────────

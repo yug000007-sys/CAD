@@ -303,6 +303,35 @@ PROJECTS = {
         "comment_template": "itt_batch",
     },
 
+    # ─── WATTS BATCH ──────────────────────────────────────────────────────────
+    "Watts Batch": {
+        "description": "Watts CEU/Webinar leads — Notes to Rep with hyperlinks, no deduplication",
+        "input_format": "auto",
+        "source_type":  "watts_batch",
+        "merge_by":     "Email",
+        "lead_source_1": "",
+        "lead_source_2": "",
+        "lead_source_3": "",
+        "col_map": {
+            "FirstName":   "User First Name",
+            "LastName":    "User Last Name",
+            "Email":       "User's Email (ignoring user display setting)",
+            "Company":     "Company Name",
+            "City":        "User's City",
+            "State":       "State/Province",
+            "Country":     "Country",
+            "ZipCode":     "Zip / Postal Code",
+            "LeadSource1": "Lead Source 1",
+            "LeadSource2": "Lead Source 2",
+            "LeadSource3": "Lead Source 3",
+            "Brand":       "Brand",
+            "ContactTitle":"Customer Type ",
+            "LeadComments":"Notes to Rep",
+        },
+        "comment_fields":    [],
+        "comment_template":  "watts_batch",
+    },
+
     # ─── AMI BEARINGS (Thomasnet xlsx — passthrough) ──────────────────────────
     "AMI Bearings": {
         "description": "AMI Bearings leads — already in output format, merge duplicates only",
