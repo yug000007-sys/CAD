@@ -432,6 +432,32 @@ def build_lead_comments_tsubaki(group_rows, config: dict) -> str:
     return html
 
 
+def build_lead_comments_traceparts(group_rows, config: dict) -> str:
+    """
+    TraceParts (T-Slots) comment builder.
+    Lists all download rows — no deduplication.
+    """
+    intro  = config.get("lead_intro", "")
+    outro  = config.get("lead_outro", "")
+    fields = config.get("comment_fields", [])
+
+    lines = []
+    if intro:
+        lines.append(f"{intro}<br>")
+
+    for row in group_rows:
+        for (label, col_key) in fields:
+            val = get_val(row, col_key)
+            if val:
+                lines.append(f"<b>{label}: </b>{val}<br>")
+        lines.append("<br>")  # blank line between each download
+
+    if outro:
+        lines.append(f"{outro}<br>")
+
+    return "".join(lines).strip()
+
+
 def build_lead_comments_default(group_rows, config: dict) -> str:
     """
     Default comment builder — formats selected fields as:
@@ -471,6 +497,8 @@ def build_lead_comments(group_rows, config: dict) -> str:
         return build_lead_comments_itt_batch(group_rows, config)
     elif template == "tsubaki" or src == "tsubaki":
         return build_lead_comments_tsubaki(group_rows, config)
+    elif template == "traceparts" or src == "traceparts":
+        return build_lead_comments_traceparts(group_rows, config)
     else:
         return build_lead_comments_default(group_rows, config)
 

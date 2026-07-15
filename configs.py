@@ -37,6 +37,7 @@ PROJECTS = {
             ("Catalog",                   "Catalog"),
             ("Opt-in (emailing allowed)", "Opt-in (emailing allowed)"),
         ],
+        "comment_template": "traceparts",
     },
 
     "Tsubaki": {
